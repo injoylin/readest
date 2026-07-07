@@ -1,0 +1,46 @@
+name: Build Intel Only
+
+on:
+  workflow_dispatch: # 允许手动点击按钮触发编译
+
+jobs:
+  build:
+    runs-on: macos-13 # macos-13 运行在 Intel 虚拟机上，最适合编译 Intel 版本
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 8
+
+      - name: Install Dependencies
+        run: |
+          pnpm install
+          pnpm --filter @readest/readest-app setup-vendors
+
+      - name: Build for Big Sur
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MACOSX_DEPLOYMENT_TARGET: "11.0" # 强制底层 C 编译器兼容 macOS 11.0
+        run: |
+          # 用一行系统自带的 sed 命令，无污染地在配置中插入最低系统要求
+          sed -i '' 's/"macOS": {/"macOS": { "minimumSystemVersion": "11.0",/g' src-tauri/tauri.conf.json || true
+          
+          # 核心：指定只编译 Intel 架构 (x86_64)
+          pnpm tauri build --target x86_64-apple-darwin
+
+      - name: Upload DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: Readest-BigSur-Intel
+          path: src-tauri/target/x86_64-apple-darwin/release/bundle/dmg/*.dmg
