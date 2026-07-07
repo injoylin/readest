@@ -1,11 +1,11 @@
-name: Build Intel Only (Fast Linux)
+name: Build Intel Only (Standard Mac)
 
 on:
   workflow_dispatch:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: macos-latest # 改用最新的 Mac 虚拟机，资源极多，秒开不用排长队！
     
     steps:
       - name: Checkout
@@ -16,40 +16,32 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 22 # 顺便升级 Node 版本，消除官方的 Deprecated 警告
+          node-version: 22 # 彻底消除 Deprecated 警告
 
       - name: Install pnpm
         uses: pnpm/action-setup@v3
         with:
-          version: 9 # 升级 pnpm 匹配新环境
+          version: 9
 
       - name: Install Dependencies
         run: |
           pnpm install
           pnpm --filter @readest/readest-app setup-vendors
 
-      - name: Install macOS Cross-Compile Toolchain
-        run: |
-          # 关键：补齐 Linux 编译 macOS 必须的低级二进制工具链、Clang 编译器及本地库
-          sudo apt-get update
-          sudo apt-get install -y clang llvm libxml2-dev uuid-dev libssl-dev Clang
-
-      - name: Set up Rust for Mac Target
+      - name: Set up Rust for Intel Mac
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: x86_64-apple-darwin
+          targets: x86_64-apple-darwin # 即使在 M1 虚拟机上，也强制下载 Intel 工具链
 
       - name: Build for Big Sur
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          MACOSX_DEPLOYMENT_TARGET: "11.0"
-          # 告诉 Rust 在 Linux 上使用 Clang 作为链接器来生成 Mac 的 Mach-O 格式文件
-          CARGO_TARGET_X86_64_APPLE_DARWIN_LINKER: x86_64-apple-darwin-clang
+          MACOSX_DEPLOYMENT_TARGET: "11.0" # 强制底层编译器兼容 Big Sur 11.0
         run: |
-          # 完美注入 Big Sur 系统版本限制
-          sed -i 's/"macOS": {/"macOS": { "minimumSystemVersion": "11.0",/g' src-tauri/tauri.conf.json || true
+          # 无污染注入最低系统版本要求
+          sed -i '' 's/"macOS": {/"macOS": { "minimumSystemVersion": "11.0",/g' src-tauri/tauri.conf.json || true
           
-          # 执行单架构编译
+          # 核心：明确命令 Tauri 仅生成 Intel (x86_64) 架构的 dmg
           pnpm tauri build --target x86_64-apple-darwin
 
       - name: Upload DMG
