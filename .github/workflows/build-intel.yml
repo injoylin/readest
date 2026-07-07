@@ -5,7 +5,7 @@ on:
 
 jobs:
   build:
-    runs-on: macos-latest # 改用最新的 Mac 虚拟机，资源极多，秒开不用排长队！
+    runs-on: macos-14 # 固定使用 macOS 14 虚拟机，避开过新环境的干扰
     
     steps:
       - name: Checkout
@@ -16,12 +16,10 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 22 # 彻底消除 Deprecated 警告
+          node-version: 22
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v3
-        with:
-          version: 9
+        uses: pnpm/action-setup@v4 # 升级到 v4，彻底解决所有 Node.js 废弃警告
 
       - name: Install Dependencies
         run: |
@@ -31,17 +29,30 @@ jobs:
       - name: Set up Rust for Intel Mac
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: x86_64-apple-darwin # 即使在 M1 虚拟机上，也强制下载 Intel 工具链
+          targets: x86_64-apple-darwin
 
-      - name: Build for Big Sur
+      - name: Inject Big Sur Config & Build
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          MACOSX_DEPLOYMENT_TARGET: "11.0" # 强制底层编译器兼容 Big Sur 11.0
+          MACOSX_DEPLOYMENT_TARGET: "11.0"
         run: |
-          # 无污染注入最低系统版本要求
-          sed -i '' 's/"macOS": {/"macOS": { "minimumSystemVersion": "11.0",/g' src-tauri/tauri.conf.json || true
+          # 放弃不稳定的 sed，改用安全的 node 脚本直接精准修改 tauri 配置文件
+          node -e "
+            const fs = require('fs');
+            const file = 'src-tauri/tauri.conf.json';
+            if (fs.existsSync(file)) {
+              let json = JSON.parse(fs.readFileSync(file, 'utf8'));
+              if (!json.bundle) json.bundle = {};
+              if (!json.bundle.macOS) json.bundle.macOS = {};
+              json.bundle.macOS.minimumSystemVersion = '11.0';
+              fs.writeFileSync(file, JSON.stringify(json, null, 2));
+              console.log('Successfully injected Big Sur target.');
+            } else {
+              console.log('tauri.conf.json not found, skipping.');
+            }
+          "
           
-          # 核心：明确命令 Tauri 仅生成 Intel (x86_64) 架构的 dmg
+          # 执行编译
           pnpm tauri build --target x86_64-apple-darwin
 
       - name: Upload DMG
