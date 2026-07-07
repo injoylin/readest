@@ -5,6 +5,7 @@ on:
 
 jobs:
   build:
+
     runs-on: macos-14
 
     env:
@@ -23,16 +24,22 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: pnpm
 
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: 10
+          version: 9.15.5
+          run_install: false
 
 
-      - name: Install Rust Intel target
+      - name: Verify Node and pnpm
+        run: |
+          node -v
+          pnpm -v
+
+
+      - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-apple-darwin
@@ -48,46 +55,72 @@ jobs:
           pnpm --filter @readest/readest-app setup-vendors
 
 
-      - name: Patch macOS minimum version
+      - name: Patch Big Sur minimum version
         working-directory: apps/readest-app
         run: |
           node <<'EOF'
-          const fs=require("fs");
+          const fs = require("fs");
+          const path = require("path");
 
-          const files=[
+          const configs = [
             "src-tauri/tauri.conf.json",
             "src-tauri/tauri.conf.json5"
           ];
 
-          for(const f of files){
-            if(fs.existsSync(f)){
-              let data=JSON.parse(fs.readFileSync(f));
+          let patched = false;
 
-              data.bundle ??= {};
-              data.bundle.macOS ??= {};
-              data.bundle.macOS.minimumSystemVersion="11.0";
+          for (const file of configs) {
+
+            if (fs.existsSync(file)) {
+
+              console.log("Found:", file);
+
+              let content = fs.readFileSync(file, "utf8");
+
+              let json;
+
+              try {
+                json = JSON.parse(content);
+              } catch(e) {
+                console.log("Skip invalid json:", file);
+                continue;
+              }
+
+
+              json.bundle ??= {};
+              json.bundle.macOS ??= {};
+
+              json.bundle.macOS.minimumSystemVersion = "11.0";
+
 
               fs.writeFileSync(
-                f,
-                JSON.stringify(data,null,2)
+                file,
+                JSON.stringify(json, null, 2)
               );
 
-              console.log("patched:",f);
-              process.exit(0);
+
+              console.log("Patched Big Sur target");
+
+              patched = true;
+              break;
             }
           }
 
-          console.log("no config patched");
+
+          if (!patched) {
+            console.log("No tauri config found");
+          }
+
           EOF
 
 
-      - name: Build Intel DMG
+      - name: Build Readest Intel DMG
         working-directory: apps/readest-app
         run: |
           pnpm tauri build --target x86_64-apple-darwin
 
 
-      - name: Upload DMG
+      - name: Upload Big Sur Intel Build
         uses: actions/upload-artifact@v4
         with:
           name: Readest-BigSur-Intel
