@@ -1,11 +1,11 @@
-name: Build Intel Only
+name: Build Intel Only (Fast Linux)
 
 on:
-  workflow_dispatch: # 允许手动点击按钮触发编译
+  workflow_dispatch:
 
 jobs:
   build:
-    runs-on: macos-13 # macos-13 运行在 Intel 虚拟机上，最适合编译 Intel 版本
+    runs-on: ubuntu-latest # 改用 Linux 虚拟机，秒开不排队！
     
     steps:
       - name: Checkout
@@ -28,15 +28,26 @@ jobs:
           pnpm install
           pnpm --filter @readest/readest-app setup-vendors
 
+      - name: Install macOS Cross Compiler Tools
+        run: |
+          # 在 Linux 上安装编译 Mac 必须的跨平台工具链
+          sudo apt-get update
+          sudo apt-get install -y libclang-dev lld
+
+      - name: Set up Rust for Mac Target
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-apple-darwin
+
       - name: Build for Big Sur
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          MACOSX_DEPLOYMENT_TARGET: "11.0" # 强制底层 C 编译器兼容 macOS 11.0
+          MACOSX_DEPLOYMENT_TARGET: "11.0"
         run: |
-          # 用一行系统自带的 sed 命令，无污染地在配置中插入最低系统要求
-          sed -i '' 's/"macOS": {/"macOS": { "minimumSystemVersion": "11.0",/g' src-tauri/tauri.conf.json || true
+          # 注入最低系统要求
+          sed -i 's/"macOS": {/"macOS": { "minimumSystemVersion": "11.0",/g' src-tauri/tauri.conf.json || true
           
-          # 核心：指定只编译 Intel 架构 (x86_64)
+          # 指定只编译 Mac Intel 架构
           pnpm tauri build --target x86_64-apple-darwin
 
       - name: Upload DMG
