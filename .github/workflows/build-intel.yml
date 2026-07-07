@@ -5,7 +5,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest # 改用 Linux 虚拟机，秒开不排队！
+    runs-on: ubuntu-latest
     
     steps:
       - name: Checkout
@@ -16,23 +16,23 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22 # 顺便升级 Node 版本，消除官方的 Deprecated 警告
 
       - name: Install pnpm
         uses: pnpm/action-setup@v3
         with:
-          version: 8
+          version: 9 # 升级 pnpm 匹配新环境
 
       - name: Install Dependencies
         run: |
           pnpm install
           pnpm --filter @readest/readest-app setup-vendors
 
-      - name: Install macOS Cross Compiler Tools
+      - name: Install macOS Cross-Compile Toolchain
         run: |
-          # 在 Linux 上安装编译 Mac 必须的跨平台工具链
+          # 关键：补齐 Linux 编译 macOS 必须的低级二进制工具链、Clang 编译器及本地库
           sudo apt-get update
-          sudo apt-get install -y libclang-dev lld
+          sudo apt-get install -y clang llvm libxml2-dev uuid-dev libssl-dev Clang
 
       - name: Set up Rust for Mac Target
         uses: dtolnay/rust-toolchain@stable
@@ -43,11 +43,13 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           MACOSX_DEPLOYMENT_TARGET: "11.0"
+          # 告诉 Rust 在 Linux 上使用 Clang 作为链接器来生成 Mac 的 Mach-O 格式文件
+          CARGO_TARGET_X86_64_APPLE_DARWIN_LINKER: x86_64-apple-darwin-clang
         run: |
-          # 注入最低系统要求
+          # 完美注入 Big Sur 系统版本限制
           sed -i 's/"macOS": {/"macOS": { "minimumSystemVersion": "11.0",/g' src-tauri/tauri.conf.json || true
           
-          # 指定只编译 Mac Intel 架构
+          # 执行单架构编译
           pnpm tauri build --target x86_64-apple-darwin
 
       - name: Upload DMG
