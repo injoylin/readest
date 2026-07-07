@@ -1,0 +1,96 @@
+name: Build Readest Big Sur Intel
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-14
+
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "11.0"
+      NODE_OPTIONS: "--max-old-space-size=8192"
+
+    steps:
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+
+      - name: Install Rust Intel target
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-apple-darwin
+
+
+      - name: Install dependencies
+        run: |
+          pnpm install
+
+
+      - name: Setup Readest vendors
+        run: |
+          pnpm --filter @readest/readest-app setup-vendors
+
+
+      - name: Patch macOS minimum version
+        working-directory: apps/readest-app
+        run: |
+          node <<'EOF'
+          const fs=require("fs");
+
+          const files=[
+            "src-tauri/tauri.conf.json",
+            "src-tauri/tauri.conf.json5"
+          ];
+
+          for(const f of files){
+            if(fs.existsSync(f)){
+              let data=JSON.parse(fs.readFileSync(f));
+
+              data.bundle ??= {};
+              data.bundle.macOS ??= {};
+              data.bundle.macOS.minimumSystemVersion="11.0";
+
+              fs.writeFileSync(
+                f,
+                JSON.stringify(data,null,2)
+              );
+
+              console.log("patched:",f);
+              process.exit(0);
+            }
+          }
+
+          console.log("no config patched");
+          EOF
+
+
+      - name: Build Intel DMG
+        working-directory: apps/readest-app
+        run: |
+          pnpm tauri build --target x86_64-apple-darwin
+
+
+      - name: Upload DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: Readest-BigSur-Intel
+          path: |
+            apps/readest-app/src-tauri/target/x86_64-apple-darwin/release/bundle/dmg/*.dmg
+            apps/readest-app/src-tauri/target/x86_64-apple-darwin/release/bundle/macos/*.app
